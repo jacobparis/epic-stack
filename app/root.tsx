@@ -29,6 +29,7 @@ import { getEnv } from './utils/env.server.ts'
 import { ButtonLink } from './utils/forms.tsx'
 import { getUserImgSrc } from './utils/misc.ts'
 import { useUser } from './utils/user.ts'
+import { ClientHintCheck } from './utils/client-hints.tsx'
 
 export const links: LinksFunction = () => {
 	return [
@@ -89,6 +90,7 @@ export default function App() {
 	return (
 		<html lang="en" className="dark h-full">
 			<head>
+				<ClientHintCheck />
 				<Meta />
 				<meta charSet="utf-8" />
 				<meta name="viewport" content="width=device-width,initial-scale=1" />
