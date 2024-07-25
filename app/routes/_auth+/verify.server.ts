@@ -4,7 +4,7 @@ import { json } from '@remix-run/node'
 import { z } from 'zod'
 import { handleVerification as handleChangeEmailVerification } from '#app/routes/settings+/profile.change-email.server.tsx'
 import { twoFAVerificationType } from '#app/routes/settings+/profile.two-factor.tsx'
-import { requireUserId } from '#app/utils/auth.server.ts'
+import { requireAccountId } from '#app/utils/auth.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { ensurePrimary } from '#app/utils/litefs.server.ts'
 import { getDomainUrl } from '#app/utils/misc.tsx'
@@ -57,13 +57,13 @@ export function getRedirectToUrl({
 }
 
 export async function requireRecentVerification(request: Request) {
-	const userId = await requireUserId(request)
+	const accountId = await requireAccountId(request)
 	const shouldReverify = await shouldRequestTwoFA(request)
 	if (shouldReverify) {
 		const reqUrl = new URL(request.url)
 		const redirectUrl = getRedirectToUrl({
 			request,
-			target: userId,
+			target: accountId,
 			type: twoFAVerificationType,
 			redirectTo: reqUrl.pathname + reqUrl.search,
 		})
@@ -98,7 +98,7 @@ export async function prepareVerification({
 		type,
 		target,
 		...verificationConfig,
-		expiresAt: new Date(Date.now() + verificationConfig.period * 1000),
+		expirationDate: new Date(Date.now() + verificationConfig.period * 1000),
 	}
 	await prisma.verification.upsert({
 		where: { target_type: { target, type } },
@@ -124,7 +124,7 @@ export async function isCodeValid({
 	const verification = await prisma.verification.findUnique({
 		where: {
 			target_type: { target, type },
-			OR: [{ expiresAt: { gt: new Date() } }, { expiresAt: null }],
+			OR: [{ expirationDate: { gt: new Date() } }, { expirationDate: null }],
 		},
 		select: { algorithm: true, secret: true, period: true, charSet: true },
 	})

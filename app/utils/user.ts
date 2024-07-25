@@ -50,6 +50,7 @@ export function userHasPermission(
 ) {
 	if (!user) return false
 	const { action, entity, access } = parsePermissionString(permission)
+
 	return user.roles.some(role =>
 		role.permissions.some(
 			permission =>

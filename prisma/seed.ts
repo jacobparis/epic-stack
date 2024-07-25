@@ -20,6 +20,18 @@ async function seed() {
 	await cleanupDb(prisma)
 	console.timeEnd('🧹 Cleaned up the database...')
 
+	console.time('🏠 Created organization...')
+	const ORGANIZATION_ID = process.env.ORGANIZATION_ID || 'default'
+
+	await prisma.organization.create({
+		data: {
+			id: ORGANIZATION_ID,
+			name: 'Default organization',
+		},
+	})
+
+	console.timeEnd('🏠 Created organization...')
+
 	console.time('🔑 Created permissions...')
 	const entities = ['user', 'note']
 	const actions = ['create', 'read', 'update', 'delete']
@@ -68,18 +80,43 @@ async function seed() {
 
 	for (let index = 0; index < totalUsers; index++) {
 		const userData = createUser()
+
+		const account = await prisma.account.create({
+			data: {
+				email: userData.email,
+				username: userData.username,
+				password: {
+					create: createPassword(userData.name),
+				},
+			},
+		})
+
 		await prisma.user
 			.create({
 				select: { id: true },
 				data: {
 					...userData,
-					password: { create: createPassword(userData.username) },
+					account: { connect: { id: account.id } },
 					image: { create: userImages[index % userImages.length] },
-					roles: { connect: { name: 'user' } },
+					memberships: {
+						create: {
+							organization: {
+								connect: {
+									id: ORGANIZATION_ID,
+								},
+							},
+							roles: {
+								connect: {
+									name: 'user',
+								},
+							},
+						},
+					},
 					notes: {
 						create: Array.from({
 							length: faker.number.int({ min: 1, max: 3 }),
 						}).map(() => ({
+							organizationId: ORGANIZATION_ID,
 							title: faker.lorem.sentence(),
 							content: faker.lorem.paragraphs(),
 							images: {
@@ -142,18 +179,36 @@ async function seed() {
 
 	const githubUser = await insertGitHubUser(MOCK_CODE_GITHUB)
 
-	await prisma.user.create({
-		select: { id: true },
+	const kodyAccount = await prisma.account.create({
 		data: {
 			email: 'kody@kcd.dev',
 			username: 'kody',
-			name: 'Kody',
-			image: { create: kodyImages.kodyUser },
-			password: { create: createPassword('kodylovesyou') },
+			password: {
+				create: createPassword('kodylovesyou'),
+			},
 			connections: {
 				create: { providerName: 'github', providerId: githubUser.profile.id },
 			},
-			roles: { connect: [{ name: 'admin' }, { name: 'user' }] },
+		},
+	})
+	await prisma.user.create({
+		select: { id: true },
+		data: {
+			account: { connect: { id: kodyAccount.id } },
+			name: 'Kody',
+			image: { create: kodyImages.kodyUser },
+			memberships: {
+				create: {
+					organization: {
+						connect: {
+							id: ORGANIZATION_ID,
+						},
+					},
+					roles: {
+						connect: [{ name: 'admin' }, { name: 'user' }],
+					},
+				},
+			},
 			notes: {
 				create: [
 					{

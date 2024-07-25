@@ -36,7 +36,7 @@ import { Icon, href as iconsHref } from './components/ui/icon.tsx'
 import { EpicToaster } from './components/ui/sonner.tsx'
 import { ThemeSwitch, useTheme } from './routes/resources+/theme-switch.tsx'
 import tailwindStyleSheetUrl from './styles/tailwind.css?url'
-import { getUserId, logout } from './utils/auth.server.ts'
+import { getAccountId, logout } from './utils/auth.server.ts'
 import { ClientHintCheck, getHints } from './utils/client-hints.tsx'
 import { prisma } from './utils/db.server.ts'
 import { getEnv } from './utils/env.server.ts'
@@ -80,36 +80,70 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
 
 export async function loader({ request }: LoaderFunctionArgs) {
 	const timings = makeTimings('root loader')
-	const userId = await time(() => getUserId(request), {
+	const accountId = await time(() => getAccountId(request), {
 		timings,
 		type: 'getUserId',
 		desc: 'getUserId in root',
 	})
 
-	const user = userId
+	const user = accountId
 		? await time(
 				() =>
-					prisma.user.findUniqueOrThrow({
-						select: {
-							id: true,
-							name: true,
-							username: true,
-							image: { select: { id: true } },
-							roles: {
-								select: {
-									name: true,
-									permissions: {
-										select: { entity: true, action: true, access: true },
+					prisma.account
+						.findUniqueOrThrow({
+							select: {
+								id: true,
+								username: true,
+								email: true,
+								users: {
+									take: 1,
+									select: {
+										name: true,
+										image: { select: { id: true } },
+										memberships: {
+											take: 1,
+											where: {
+												organizationId:
+													process.env.ORGANIZATION_ID || 'default',
+											},
+											select: {
+												roles: {
+													select: {
+														name: true,
+														permissions: {
+															select: {
+																entity: true,
+																action: true,
+																access: true,
+															},
+														},
+													},
+												},
+											},
+										},
 									},
 								},
 							},
-						},
-						where: { id: userId },
-					}),
+							where: { id: accountId },
+						})
+						.then(account => {
+							const user = account.users[0]
+							const membership = user?.memberships[0]
+
+							if (!membership) return null
+
+							return {
+								email: account.email,
+								username: account.username,
+								...user,
+								roles: membership.roles,
+							}
+						}),
+
 				{ timings, type: 'find user', desc: 'find user in root' },
 			)
 		: null
-	if (userId && !user) {
+	if (accountId && !user) {
 		console.info('something weird happened')
 		// something weird happened... The user is authenticated but we can't find
 		// them in the database. Maybe they were deleted? Let's log them out.

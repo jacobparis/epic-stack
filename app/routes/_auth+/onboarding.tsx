@@ -71,7 +71,7 @@ export async function action({ request }: ActionFunctionArgs) {
 	const submission = await parseWithZod(formData, {
 		schema: intent =>
 			SignupFormSchema.superRefine(async (data, ctx) => {
-				const existingUser = await prisma.user.findUnique({
+				const existingUser = await prisma.account.findUnique({
 					where: { username: data.username },
 					select: { id: true },
 				})

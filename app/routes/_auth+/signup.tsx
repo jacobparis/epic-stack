@@ -35,11 +35,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	const submission = await parseWithZod(formData, {
 		schema: SignupSchema.superRefine(async (data, ctx) => {
-			const existingUser = await prisma.user.findUnique({
+			const existingAccount = await prisma.account.findUnique({
 				where: { email: data.email },
 				select: { id: true },
 			})
-			if (existingUser) {
+			if (existingAccount) {
 				ctx.addIssue({
 					path: ['email'],
 					code: z.ZodIssueCode.custom,

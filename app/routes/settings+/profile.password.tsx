@@ -15,8 +15,8 @@ import { Icon } from '#app/components/ui/icon.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
 import {
 	getPasswordHash,
-	requireUserId,
-	verifyUserPassword,
+	requireAccountId,
+	verifyAccountPassword,
 } from '#app/utils/auth.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { useIsPending } from '#app/utils/misc.tsx'
@@ -56,13 +56,13 @@ async function requirePassword(userId: string) {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-	const userId = await requireUserId(request)
+	const userId = await requireAccountId(request)
 	await requirePassword(userId)
 	return json({})
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-	const userId = await requireUserId(request)
+	const userId = await requireAccountId(request)
 	await requirePassword(userId)
 	const formData = await request.formData()
 	const submission = await parseWithZod(formData, {
@@ -70,7 +70,10 @@ export async function action({ request }: ActionFunctionArgs) {
 		schema: ChangePasswordForm.superRefine(
 			async ({ currentPassword, newPassword }, ctx) => {
 				if (currentPassword && newPassword) {
-					const user = await verifyUserPassword({ id: userId }, currentPassword)
+					const user = await verifyAccountPassword(
+						{ id: userId },
+						currentPassword,
+					)
 					if (!user) {
 						ctx.addIssue({
 							path: ['currentPassword'],

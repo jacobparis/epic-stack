@@ -13,7 +13,7 @@ import { ErrorList, Field } from '#app/components/forms.tsx'
 import { Button } from '#app/components/ui/button.tsx'
 import { Icon } from '#app/components/ui/icon.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
-import { requireUserId, sessionKey } from '#app/utils/auth.server.ts'
+import { requireAccountId, sessionKey } from '#app/utils/auth.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { getUserImgSrc, useDoubleCheck } from '#app/utils/misc.tsx'
 import { authSessionStorage } from '#app/utils/session.server.ts'
@@ -31,37 +31,48 @@ const ProfileFormSchema = z.object({
 })
 
 export async function loader({ request }: LoaderFunctionArgs) {
-	const userId = await requireUserId(request)
-	const user = await prisma.user.findUniqueOrThrow({
-		where: { id: userId },
-		select: {
-			id: true,
-			name: true,
-			username: true,
-			email: true,
-			image: {
-				select: { id: true },
-			},
-			_count: {
-				select: {
-					sessions: {
-						where: {
-							expirationDate: { gt: new Date() },
+	const accountId = await requireAccountId(request)
+	const user = await prisma.account
+		.findUniqueOrThrow({
+			where: { id: accountId },
+			select: {
+				id: true,
+				username: true,
+				email: true,
+				user: {
+					take: 1,
+					select: {
+						id: true,
+						name: true,
+						image: {
+							select: { id: true },
+						},
+					},
+				},
+				_count: {
+					select: {
+						sessions: {
+							where: {
+								expirationDate: { gt: new Date() },
+							},
 						},
 					},
 				},
 			},
-		},
-	})
+		})
+		.map(({ users, ...account }) => ({
+			...account,
+			user: users[0],
+		}))
 
 	const twoFactorVerification = await prisma.verification.findUnique({
 		select: { id: true },
-		where: { target_type: { type: twoFAVerificationType, target: userId } },
+		where: { target_type: { type: twoFAVerificationType, target: accountId } },
 	})
 
 	const password = await prisma.password.findUnique({
-		select: { userId: true },
-		where: { userId },
+		select: { accountId: true },
+		where: { accountId },
 	})
 
 	return json({
@@ -81,18 +92,18 @@ const signOutOfSessionsActionIntent = 'sign-out-of-sessions'
 const deleteDataActionIntent = 'delete-data'
 
 export async function action({ request }: ActionFunctionArgs) {
-	const userId = await requireUserId(request)
+	const accountId = await requireAccountId(request)
 	const formData = await request.formData()
 	const intent = formData.get('intent')
 	switch (intent) {
 		case profileUpdateActionIntent: {
-			return profileUpdateAction({ request, userId, formData })
+			return profileUpdateAction({ request, accountId, formData })
 		}
 		case signOutOfSessionsActionIntent: {
-			return signOutOfSessionsAction({ request, userId, formData })
+			return signOutOfSessionsAction({ request, accountId, formData })
 		}
 		case deleteDataActionIntent: {
-			return deleteDataAction({ request, userId, formData })
+			return deleteDataAction({ request, accountId, formData })
 		}
 		default: {
 			throw new Response(`Invalid intent "${intent}"`, { status: 400 })
@@ -176,15 +187,15 @@ export default function EditUserProfile() {
 	)
 }
 
-async function profileUpdateAction({ userId, formData }: ProfileActionArgs) {
+async function profileUpdateAction({ accountId, formData }: ProfileActionArgs) {
 	const submission = await parseWithZod(formData, {
 		async: true,
 		schema: ProfileFormSchema.superRefine(async ({ username }, ctx) => {
-			const existingUsername = await prisma.user.findUnique({
+			const existingUsername = await prisma.account.findUnique({
 				where: { username },
 				select: { id: true },
 			})
-			if (existingUsername && existingUsername.id !== userId) {
+			if (existingUsername && existingUsername.id !== accountId) {
 				ctx.addIssue({
 					path: ['username'],
 					code: z.ZodIssueCode.custom,
@@ -202,12 +213,13 @@ async function profileUpdateAction({ userId, formData }: ProfileActionArgs) {
 
 	const data = submission.value
 
-	await prisma.user.update({
+	await prisma.account.update({
 		select: { username: true },
-		where: { id: userId },
+		where: { id: accountId },
 		data: {
 			name: data.name,
 			username: data.username,
+			users: { update: { data: { name: data.name } } },
 		},
 	})
 

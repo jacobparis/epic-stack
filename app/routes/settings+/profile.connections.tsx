@@ -17,7 +17,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from '#app/components/ui/tooltip.tsx'
-import { requireUserId } from '#app/utils/auth.server.ts'
+import { requireAccountId } from '#app/utils/auth.server.ts'
 import { resolveConnectionData } from '#app/utils/connections.server.ts'
 import {
 	ProviderConnectionForm,
@@ -36,26 +36,26 @@ export const handle: BreadcrumbHandle & SEOHandle = {
 	getSitemapEntries: () => null,
 }
 
-async function userCanDeleteConnections(userId: string) {
-	const user = await prisma.user.findUnique({
+async function userCanDeleteConnections(accountId: string) {
+	const account = await prisma.account.findUnique({
 		select: {
-			password: { select: { userId: true } },
+			password: { select: { accountId: true } },
 			_count: { select: { connections: true } },
 		},
-		where: { id: userId },
+		where: { id: accountId },
 	})
 	// user can delete their connections if they have a password
-	if (user?.password) return true
+	if (account?.password) return true
 	// users have to have more than one remaining connection to delete one
-	return Boolean(user?._count.connections && user?._count.connections > 1)
+	return Boolean(account?._count.connections && account?._count.connections > 1)
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-	const userId = await requireUserId(request)
+	const accountId = await requireAccountId(request)
 	const timings = makeTimings('profile connections loader')
 	const rawConnections = await prisma.connection.findMany({
 		select: { id: true, providerName: true, providerId: true, createdAt: true },
-		where: { userId },
+		where: { accountId },
 	})
 	const connections: Array<{
 		providerName: ProviderName
@@ -84,7 +84,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	return json(
 		{
 			connections,
-			canDeleteConnections: await userCanDeleteConnections(userId),
+			canDeleteConnections: await userCanDeleteConnections(accountId),
 		},
 		{ headers: { 'Server-Timing': timings.toString() } },
 	)
@@ -98,14 +98,14 @@ export const headers: HeadersFunction = ({ loaderHeaders }) => {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-	const userId = await requireUserId(request)
+	const accountId = await requireAccountId(request)
 	const formData = await request.formData()
 	invariantResponse(
 		formData.get('intent') === 'delete-connection',
 		'Invalid intent',
 	)
 	invariantResponse(
-		await userCanDeleteConnections(userId),
+		await userCanDeleteConnections(accountId),
 		'You cannot delete your last connection unless you have a password.',
 	)
 	const connectionId = formData.get('connectionId')
@@ -113,7 +113,7 @@ export async function action({ request }: ActionFunctionArgs) {
 	await prisma.connection.delete({
 		where: {
 			id: connectionId,
-			userId: userId,
+			accountId: accountId,
 		},
 	})
 	const toastHeaders = await createToastHeaders({

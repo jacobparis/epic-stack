@@ -55,7 +55,7 @@ test('when auth fails, send the user to login with a toast', async () => {
 
 test('when a user is logged in, it creates the connection', async () => {
 	const githubUser = await insertGitHubUser()
-	const session = await setupUser()
+	const session = await setupAccount()
 	const request = await setupRequest({
 		sessionId: session.id,
 		code: githubUser.code,
@@ -72,7 +72,7 @@ test('when a user is logged in, it creates the connection', async () => {
 	const connection = await prisma.connection.findFirst({
 		select: { id: true },
 		where: {
-			userId: session.userId,
+			accountId: session.activeAccountId,
 			providerId: githubUser.profile.id.toString(),
 		},
 	})
@@ -83,12 +83,12 @@ test('when a user is logged in, it creates the connection', async () => {
 })
 
 test(`when a user is logged in and has already connected, it doesn't do anything and just redirects the user back to the connections page`, async () => {
-	const session = await setupUser()
+	const session = await setupAccount()
 	const githubUser = await insertGitHubUser()
 	await prisma.connection.create({
 		data: {
 			providerName: GITHUB_PROVIDER_NAME,
-			userId: session.userId,
+			accountId: session.activeAccountId,
 			providerId: githubUser.profile.id.toString(),
 		},
 	})
@@ -109,7 +109,7 @@ test(`when a user is logged in and has already connected, it doesn't do anything
 test('when a user exists with the same email, create connection and make session', async () => {
 	const githubUser = await insertGitHubUser()
 	const email = githubUser.primaryEmail.toLowerCase()
-	const { userId } = await setupUser({ ...createUser(), email })
+	const { activeAccountId } = await setupAccount({ ...createUser(), email })
 	const request = await setupRequest({ code: githubUser.code })
 	const response = await loader({ request, params: PARAMS, context: {} })
 
@@ -125,7 +125,7 @@ test('when a user exists with the same email, create connection and make session
 	const connection = await prisma.connection.findFirst({
 		select: { id: true },
 		where: {
-			userId: userId,
+			accountId: activeAccountId,
 			providerId: githubUser.profile.id.toString(),
 		},
 	})
@@ -134,12 +134,14 @@ test('when a user exists with the same email, create connection and make session
 		'the connection was not created in the database',
 	).toBeTruthy()
 
-	await expect(response).toHaveSessionForUser(userId)
+	expect(activeAccountId).not.toBeNull()
+
+	await expect(response).toHaveSessionForUser(activeAccountId!)
 })
 
 test('gives an error if the account is already connected to another user', async () => {
 	const githubUser = await insertGitHubUser()
-	await prisma.user.create({
+	await prisma.account.create({
 		data: {
 			...createUser(),
 			connections: {
@@ -150,7 +152,7 @@ test('gives an error if the account is already connected to another user', async
 			},
 		},
 	})
-	const session = await setupUser()
+	const session = await setupAccount()
 	const request = await setupRequest({
 		sessionId: session.id,
 		code: githubUser.code,
@@ -169,35 +171,35 @@ test('gives an error if the account is already connected to another user', async
 
 test('if a user is not logged in, but the connection exists, make a session', async () => {
 	const githubUser = await insertGitHubUser()
-	const { userId } = await setupUser()
+	const { activeAccountId } = await setupAccount()
 	await prisma.connection.create({
 		data: {
 			providerName: GITHUB_PROVIDER_NAME,
 			providerId: githubUser.profile.id.toString(),
-			userId,
+			accountId: activeAccountId,
 		},
 	})
 	const request = await setupRequest({ code: githubUser.code })
 	const response = await loader({ request, params: PARAMS, context: {} })
 	expect(response).toHaveRedirect('/')
-	await expect(response).toHaveSessionForUser(userId)
+	await expect(response).toHaveSessionForUser(activeAccountId)
 })
 
 test('if a user is not logged in, but the connection exists and they have enabled 2FA, send them to verify their 2FA and do not make a session', async () => {
 	const githubUser = await insertGitHubUser()
-	const { userId } = await setupUser()
+	const { activeAccountId } = await setupAccount()
 	await prisma.connection.create({
 		data: {
 			providerName: GITHUB_PROVIDER_NAME,
 			providerId: githubUser.profile.id.toString(),
-			userId,
+			accountId: activeAccountId,
 		},
 	})
 	const { otp: _otp, ...config } = generateTOTP()
 	await prisma.verification.create({
 		data: {
 			type: twoFAVerificationType,
-			target: userId,
+			target: activeAccountId,
 			...config,
 		},
 	})
@@ -205,7 +207,7 @@ test('if a user is not logged in, but the connection exists and they have enable
 	const response = await loader({ request, params: PARAMS, context: {} })
 	const searchParams = new URLSearchParams({
 		type: twoFAVerificationType,
-		target: userId,
+		target: activeAccountId,
 		redirectTo: '/',
 	})
 	expect(response).toHaveRedirect(`/verify?${searchParams}`)
@@ -239,21 +241,35 @@ async function setupRequest({
 	return request
 }
 
-async function setupUser(userData = createUser()) {
+async function setupAccount(userData = createUser()) {
+	const account = await prisma.account.create({
+		data: {
+			...userData,
+		},
+		select: {
+			id: true,
+		},
+	})
 	const session = await prisma.session.create({
 		data: {
 			expirationDate: getSessionExpirationDate(),
-			user: {
-				create: {
-					...userData,
+			activeAccountId: account.id,
+			accounts: {
+				connect: {
+					id: account.id,
 				},
 			},
 		},
 		select: {
 			id: true,
-			userId: true,
+			activeAccountId: true,
 		},
 	})
 
-	return session
+	invariant(session.activeAccountId, 'no active account')
+
+	return session as {
+		id: string
+		activeAccountId: string
+	}
 }

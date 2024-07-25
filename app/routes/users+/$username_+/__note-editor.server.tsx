@@ -8,7 +8,7 @@ import {
 	type ActionFunctionArgs,
 } from '@remix-run/node'
 import { z } from 'zod'
-import { requireUserId } from '#app/utils/auth.server.ts'
+import { requireAccountId } from '#app/utils/auth.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import {
 	MAX_UPLOAD_SIZE,
@@ -29,7 +29,7 @@ function imageHasId(
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-	const userId = await requireUserId(request)
+	const userId = await requireAccountId(request)
 
 	const formData = await parseMultipartFormData(
 		request,

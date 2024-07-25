@@ -15,5 +15,8 @@
 	],
 	"workbench.editorAssociations": {
 		"*.db": "sqlite-viewer.view"
+	},
+	"[prisma]": {
+		"editor.defaultFormatter": "Prisma.prisma"
 	}
 }

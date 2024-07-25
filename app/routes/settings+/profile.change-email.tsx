@@ -16,7 +16,7 @@ import {
 	prepareVerification,
 	requireRecentVerification,
 } from '#app/routes/_auth+/verify.server.ts'
-import { requireUserId } from '#app/utils/auth.server.ts'
+import { requireAccountId } from '#app/utils/auth.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { sendEmail } from '#app/utils/email.server.ts'
 import { useIsPending } from '#app/utils/misc.tsx'
@@ -38,9 +38,9 @@ const ChangeEmailSchema = z.object({
 
 export async function loader({ request }: LoaderFunctionArgs) {
 	await requireRecentVerification(request)
-	const userId = await requireUserId(request)
-	const user = await prisma.user.findUnique({
-		where: { id: userId },
+	const accountId = await requireAccountId(request)
+	const user = await prisma.account.findUnique({
+		where: { id: accountId },
 		select: { email: true },
 	})
 	if (!user) {
@@ -51,14 +51,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-	const userId = await requireUserId(request)
+	const accountId = await requireAccountId(request)
 	const formData = await request.formData()
 	const submission = await parseWithZod(formData, {
 		schema: ChangeEmailSchema.superRefine(async (data, ctx) => {
-			const existingUser = await prisma.user.findUnique({
+			const existingAccount = await prisma.account.findUnique({
 				where: { email: data.email },
 			})
-			if (existingUser) {
+			if (existingAccount) {
 				ctx.addIssue({
 					path: ['email'],
 					code: z.ZodIssueCode.custom,
@@ -78,7 +78,7 @@ export async function action({ request }: ActionFunctionArgs) {
 	const { otp, redirectTo, verifyUrl } = await prepareVerification({
 		period: 10 * 60,
 		request,
-		target: userId,
+		target: accountId,
 		type: 'change-email',
 	})
 
